@@ -118,7 +118,7 @@ copy() {
         usage
     elif [[ -e "$snippets_dir/$1" ]]; then
         blanks "$snippets_dir/$1"
-        pbcopy < "$snippets_dir/$1-tmp"
+        $PBCOPY < "$snippets_dir/$1-tmp"
         echo "Snippet text copied to clipboard."
         rm "$snippets_dir/$1-tmp"
     else
@@ -130,10 +130,7 @@ paste() {
     if [[ "$2" == "" ]]; then
         usage
     elif [[ -e "$snippets_dir/$2" ]]; then
-        blanks "$snippets_dir/$2"
-        pbcopy < "$snippets_dir/$2-tmp"
-        pbpaste
-        rm "$snippets_dir/$2-tmp"
+        $PBPASTE > "$snippets_dir/$2"
     else
         echo "ERROR: Snippet $2 does not exist."; exit 1
     fi
@@ -160,8 +157,8 @@ case $(uname -a) in
     Darwin)
         : ;;
     *)
-        alias pbcopy='xsel --clipboard --input'
-        alias pbpaste='xsel --clipboard --output' ;;
+        PBCOPY='xsel --clipboard --input'
+        PBPASTE='xsel --clipboard --output' 
 esac
 
 # Check for/create snippet directory
