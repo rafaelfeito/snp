@@ -1,19 +1,36 @@
 #!/bin/bash
+set +e
+
+TMPDIR=/tmp
+SNIPPETS_DIR=~/".snp"
+EDITOR=vim #TODO system default
+
+#stdin= content ; $1 = key ; $2 = desc ; $3 = tags
+create_snp() {
+	#overwriteOk $1 || return 1
+	cat > $TMPDIR/content$$
+	echo "#DESCRIPTION:$2" >  $TMPDIR/header$$
+	echo "#TAGS:$3" 		>> $TMPDIR/header$$
+	echo "#PARAMS:"			>> $TMPDIR/header$$
+	cat $TMPDIR/header$$ $TMPDIR/content$$ > "$SNIPPETS_DIR/$1"
+	rm  $TMPDIR/header$$ $TMPDIR/content$$
+}
+
 
 list() {
     echo -e "snp snippets:\n"
-    ls -R "$snippets_dir"
+    ls --color -R "$SNIPPETS_DIR"
 }
 
 move() {
     if [[ "$2" == "" && $3 == "" ]]; then
         echo -e "snp usage:\n"
         echo "snp move <name> <group>"
-    elif [[ -e "$snippets_dir/$2" ]]; then
-        if [[ -d "$snippets_dir/$3" ]]; then
-            mv "$snippets_dir/$2" "$snippets_dir/$3/$2"
+    elif [[ -e "$SNIPPETS_DIR/$2" ]]; then
+        if [[ -d "$SNIPPETS_DIR/$3" ]]; then
+            mv "$SNIPPETS_DIR/$2" "$SNIPPETS_DIR/$3/$2"
         else
-            echo "ERROR: Group $snippets_dir/$3 does not exist."; exit 1
+            echo "ERROR: Group $SNIPPETS_DIR/$3 does not exist."; exit 1
         fi
     else
         echo "ERROR: Snippet $2 does not exist."; exit 1
@@ -27,7 +44,7 @@ new() {
         echo "snp new group <name>"
     elif [[ "$2" == "group" || "$2" == "g" ]]; then # New group
         if [[ "$3" != "" ]]; then
-            mkdir "$snippets_dir/$3"
+            mkdir "$SNIPPETS_DIR/$3"
             echo "Created new group \"$3\"."
         else
             echo -e "snp usage:\n"
@@ -38,17 +55,17 @@ new() {
             echo -e "snp usage:\n"
             echo 'snp new <name> "<text>"'
         else
-            if [[ -e "$snippets_dir/$2" ]]; then
-                echo "Snippet $snippet_dir/$2 already exists."
-                echo "Overwrite? [y/n]"
-                read yn
-                if [[ ${yn} == y* ]]; then
-                    rm "$snippets_dir/$2"
-                else
-                    return
-                fi
-            fi
-            printf "%s" "$3" >> "$snippets_dir/$2"
+	    if [[ -e "$SNIPPETS_DIR/$1" ]]; then
+		echo "Snippet $1 already exists."
+		echo "Overwrite? [y/n]"
+		read yn
+		if [[ ${yn} == y* ]]; then
+		    rm "$SNIPPETS_DIR/$2"
+		else
+		    return 1
+		fi
+	    fi
+            printf "%s" "$3" | create_snp "$2" "$4" "$5"
             echo "Created new snippet \"$2\"."
         fi
     fi
@@ -61,8 +78,8 @@ remove() {
         echo "snp remove group <name>"
     elif [[ "$2" == "group" || "$2" == "g" ]]; then # Remove group
         if [[ "$3" != "" ]]; then
-            if [[ -e "$snippets_dir/$3" ]]; then
-                rm -rf "$snippets_dir/$3"
+            if [[ -e "$SNIPPETS_DIR/$3" ]]; then
+                rm -rf "$SNIPPETS_DIR/$3"
                 echo "Removed group \"$3\"."
             else
                 echo "ERROR: Group $3 does not exist."; exit 1
@@ -72,8 +89,8 @@ remove() {
             echo "snp remove group <name>"
         fi
     elif [[ "$2" != "" ]]; then # Remove snippet
-        if [[ -e "$snippets_dir/$2" ]]; then
-            rm "$snippets_dir/$2"
+        if [[ -e "$SNIPPETS_DIR/$2" ]]; then
+            rm "$SNIPPETS_DIR/$2"
             echo "Removed snippet \"$2\"."
         else
             echo "ERROR: Snippet $2 does not exist."; exit 1
@@ -116,59 +133,109 @@ blanks() {
 copy() {
     if [[ "$1" == "" ]]; then
         usage
-    elif [[ -e "$snippets_dir/$1" ]]; then
-        blanks "$snippets_dir/$1"
-        $PBCOPY < "$snippets_dir/$1-tmp"
+    elif [[ -e "$SNIPPETS_DIR/$1" ]]; then
+        blanks "$SNIPPETS_DIR/$1"
+        sed '1,3d' "$SNIPPETS_DIR/$1-tmp" | $PBCOPY
         echo "Snippet text copied to clipboard."
-        rm "$snippets_dir/$1-tmp"
+        rm "$SNIPPETS_DIR/$1-tmp"
     else
         echo "ERROR: Snippet $1 does not exist."; exit 1
     fi
 }
 
+
 paste() {
     if [[ "$2" == "" ]]; then
         usage
-    elif [[ -e "$snippets_dir/$2" ]]; then
-        $PBPASTE > "$snippets_dir/$2"
+    elif [[ ! -e "$SNIPPETS_DIR/$2" ]]; then
+        $PBPASTE | create_snp $2
+    else #already exists
+	echo "Snippet $1 already exists."
+	echo "Overwrite? [y/n]"
+	read yn
+	if [[ ${yn} == y* ]]; then
+	    rm "$SNIPPETS_DIR/$2"
+            $PBPASTE | create_snp $2
+	else
+	    return 1
+	fi
+    fi
+}
+
+display() {
+    if [[ "$2" == "" ]]; then
+        usage
+    elif [[ -e "$SNIPPETS_DIR/$2" ]]; then
+        blanks "$SNIPPETS_DIR/$2"|sed '1,3d'
+        rm "$SNIPPETS_DIR/$2-tmp"
     else
         echo "ERROR: Snippet $2 does not exist."; exit 1
     fi
 }
 
-usage() {
-    echo -e "snp usage:\n"
-    echo "snp <name>                    # Copy snippet to clipboard"
-    echo "snp paste <name>              # Paste name (from clipboard)"
-    echo 'snp new <name> "<text>"       # New snippet'
-    echo "snp new group <name>          # New group"
-    echo "snp list                      # List snippets"
-    echo "snp move <name|group> <group> # Move group or snippet to group"
-    echo "snp remove <name>             # Remove snippet"
-    echo "snp remove group <name>       # Remove group"
-    echo "snp help                      # Display usage"
-    echo "snp version                   # Display version"
+search() {
+    if [[ "$2" == "" ]]; then
+        usage
+    else
+        grep --color -r $2 $SNIPPETS_DIR/*
+    fi
 }
 
-snippets_dir=~/".snp"
+edit() {
+    if [[ "$2" == "" ]]; then
+	usage
+    else
+	$EDITOR $SNIPPETS_DIR/$2
+    fi
+}
+
+#open() {
+#    if [[ "$2" == "" ]]; then
+#        usage
+#    elif [[ -e "$SNIPPETS_DIR/$2" ]]; then
+#        $PBPASTE > "$SNIPPETS_DIR/$2"
+#    else
+#        echo "ERROR: Snippet $2 does not exist."; exit 1
+#    fi
+#}
+
+usage() {
+    echo -e "snp usage:\n"
+    echo "snp <name>                    		# Copy snippet to clipboard"
+    echo "snp paste <name>              		# Paste name (from clipboard)"
+    echo "snp display <name>            		# Display snippet without copy"
+    echo 'snp new <name> "<text>"       		# New snippet'
+    echo 'snp new <name> "<text>" "<desc>" "<tags>,.." 	# New snippet with metadata'
+    echo "snp new group <name>          		# New group"
+    echo "snp list                      		# List snippets"
+    echo "snp move <name|group> <group> 		# Move group or snippet to group"
+    echo "snp remove <name>             		# Remove snippet"
+    echo "snp search <something>        		# Search snippet"
+    echo "snp edit <name>	        		# Edit snippet"
+    echo "snp remove group <name>       		# Remove group"
+    echo "snp help                      		# Display usage"
+    echo "snp version                   		# Display version"
+}
+
 
 # Set up copy and paste functions based on OS
 case $(uname -a) in
     Darwin)
         : ;;
     *)
+	#TODO:verify if exists
         PBCOPY='xsel --clipboard --input'
         PBPASTE='xsel --clipboard --output' 
 esac
 
 # Check for/create snippet directory
-if [[ ! -d "$snippets_dir" ]]; then
-    echo "$snippets_dir doesn't exist."
+if [[ ! -d "$SNIPPETS_DIR" ]]; then
+    echo "$SNIPPETS_DIR doesn't exist."
     echo "Create it now? [y/n]"
     read yn
     if [[ ${yn} == y* ]]; then
-        mkdir "$snippets_dir"
-        echo "$snippets_dir created"
+        mkdir "$SNIPPETS_DIR"
+        echo "$SNIPPETS_DIR created"
     else
         exit 0
     fi
@@ -179,14 +246,20 @@ case $1 in
         paste "$@" ;;
     n|new)
         new "$@" ;;
+    d|display)
+        display "$@" ;;
     l|list)
         list ;;
     m|move)
         move "$@" ;;
     r|remove)
         remove "$@" ;;
+    e|edit)
+        edit "$@" ;;
+    s|search)
+        search $@ ;;
     v|version)
-        echo "snp v0.1+dev" ;;
+        echo "snp v0.2+dev" ;;
     h|help)
         usage ;;
     *)
